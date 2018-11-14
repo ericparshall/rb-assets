@@ -1,0 +1,146 @@
+@-moz-keyframes spinner-loader {
+    0% {
+        -moz-transform: rotate(0deg);
+        transform: rotate(0deg);
+    }
+    100% {
+        -moz-transform: rotate(360deg);
+        transform: rotate(360deg);
+    }
+}
+@-webkit-keyframes spinner-loader {
+    0% {
+        -webkit-transform: rotate(0deg);
+        transform: rotate(0deg);
+    }
+    100% {
+        -webkit-transform: rotate(360deg);
+        transform: rotate(360deg);
+    }
+}
+@keyframes spinner-loader {
+    0% {
+        -moz-transform: rotate(0deg);
+        -ms-transform: rotate(0deg);
+        -webkit-transform: rotate(0deg);
+        transform: rotate(0deg);
+    }
+    100% {
+        -moz-transform: rotate(360deg);
+        -ms-transform: rotate(360deg);
+        -webkit-transform: rotate(360deg);
+        transform: rotate(360deg);
+    }
+}
+
+.spin {
+    -moz-animation: spinner-loader 1500ms infinite linear;
+    -webkit-animation: spinner-loader 1500ms infinite linear;
+    animation: spinner-loader 1500ms infinite linear;
+    color: #3333FF;
+    margin-left: 4px;
+}
+
+#directory-view {
+    height: calc(100vh - 120px);
+    overflow-y: scroll;
+}
+
+#directory-view ul {
+    list-style: none;
+    padding-left: 20px;
+    margin-top: 0;
+}
+
+#directory-view i.icon {
+    margin-right: 4px;
+}
+
+#directory-view .root-directory a {
+    color: #000;
+    text-decoration: none;
+    margin-left: 10px;
+    padding: 2px 10px;
+}
+
+#directory-view .closed > ul {
+    height: 0;
+    overflow: hidden;
+}
+
+#directory-view .load-more {
+    /*text-align: center;*/
+}
+
+#directory-view .load-more a {
+    cursor: pointer;
+}
+
+#directory-view .highlight-directory {
+    background: #FFFFAA;
+}
+
+#directory-view .loading-message {
+    margin-left: 10px;
+}
+
+.statusBar {
+    max-width: 320px;
+    width: 100%;
+    height: 24px;
+    border: 1px solid #333;
+    box-sizing: border-box;
+    position: relative;
+    background: white;
+}
+
+.statusBarMeter {
+    width: 0;
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    transition: width 400ms, background-color 1s;
+}
+
+.enqueuedStatusBarMeter {
+    background: #DDD;
+}
+
+.initiatedStatusBarMeter {
+    background: #AAA;
+}
+
+.completedStatusBarMeter {
+    background: #2AA1D9;
+}
+
+.completedStatusBarMeter.done {
+    background: #33FF33;
+}
+
+.statusTextSection {
+    margin-top: 10px;
+}
+
+.statusTextSection > span {
+    margin-right: 20px;
+}
+
+.modal-controls .btn {
+    margin-left: 4px;
+}
+
+.clearfix:after {
+    visibility: hidden;
+    display: block;
+    font-size: 0;
+    content: " ";
+    clear: both;
+    height: 0;
+}
+.clearfix { display: inline-block; }
+/* start commented backslash hack \*/
+* html .clearfix { height: 1%; }
+.clearfix { display: block; }
+/* close commented backslash hack */

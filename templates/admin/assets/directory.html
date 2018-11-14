@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.0/jquery.min.js"></script>
+
+    <title>{{#data:key/"project.title"}}</title>
+
+    {{#Include:template/"templates.admin.main-css"}}
+
+    <script src="/static/assets/scripts/asset-directory-view.js"></script>
+    <link rel="stylesheet" href="/static/assets/css/asset-directory-view.css">
+
+</head>
+<body>
+
+{{#Include:template/"templates.admin.sidebar"}}
+{{#Include:template/"templates.admin.header"}}
+
+<div class="contentArea">
+    <div id="directory-container"></div>
+</div>
+
+<script>
+    (function(){
+
+        var dropzone = document.getElementsByClassName('dropzone')[0];
+        var uploadsSection = document.getElementById('uploadsSection');
+
+//        var OWNER_MODEL_KEY = '{{#data:key/ownerModelKey/withSlashes/1}}';
+//        var OWNER_ID = '{{#data:key/ownerId/withSlashes/1}}';
+//        var OWNER_MODEL_ICON = '{{#data:key/ownerModelIcon/withSlashes/1}}';
+//        var OWNER_DISPLAY_VALUE = '{{#data:key/ownerDisplayValue/withSlashes/1}}'
+
+        RB.runDirectoryView(document.getElementById('directory-container'), {});
+    })();
+</script>
+
+</body>
+</html>

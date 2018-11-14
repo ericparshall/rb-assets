@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.0/jquery.min.js"></script>
+
+    <title>{{#data:key/"project.title"}}</title>
+
+    {{#Include:template/"templates.admin.main-css"}}
+
+</head>
+<body>
+
+{{#Include:template/"templates.admin.sidebar"}}
+{{#Include:template/"templates.admin.header"}}
+
+<div class="contentArea">
+    <div class="well"><div class="dropzone">
+        Drop files or a directory here
+    </div></div>
+
+    <div id="uploadsSection">
+
+    </div>
+</div>
+
+<script>
+(function(){
+
+    var dropzone = document.getElementsByClassName('dropzone')[0];
+    var uploadsSection = document.getElementById('uploadsSection');
+
+    var OWNER_MODEL_KEY = '{{#data:key/ownerModelKey/withSlashes/1}}';
+    var OWNER_ID = '{{#data:key/ownerId/withSlashes/1}}';
+
+    var MAX_SIMULTANEOUS_UPLOADS = 8;
+
+    function randomId(len)
+    {
+
+        len = len || 16;
+
+        var allowed = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+
+        var result = '';
+
+        for (var i = 0; i < len; i++) {
+            result += allowed[Math.floor(Math.random() * allowed.length)];
+        }
+
+        return result;
+    }
+
+    function UploadManager(baseEntries, baseElement)
+    {
+        this.baseEntries = baseEntries;
+        this.baseElement = baseElement;
+        this.queue = [];
+        this.totalItems = 0;
+        this.enqueuedItems = 0;
+        this.initiatedItems = 0;
+        this.completedItems = 0;
+        this.running = 0;
+        this.maxSimultaneousUploads = MAX_SIMULTANEOUS_UPLOADS;
+
+        this.onBeforeUnload = function(e) {
+            var message = 'There is an upload in progress, are you sure you want to leave before it is done?  Doing so may result in only a portion of your items being successfully uploaded.';
+            e.returnValue = message;
+            return message;
+        }.bind(this);
+    }
+
+    UploadManager.prototype.run = function(callback)
+    {
+        var self = this;
+
+        window.addEventListener('beforeunload', self.onBeforeUnload);
+
+        var entries = self.baseEntries;
+
+        self.createStatusBar();
+
+        var baseUl = document.createElement('ul');
+        baseUl.classList = 'topLevel';
+        self.baseElement.appendChild(baseUl);
+
+        var finished = 0;
+        var topLevelItems = [];
+        entries.forEach(function(item, i) {
+            self.buildUploadTree(item, baseUl, i, function(topLevelItem){
+                finished++;
+                topLevelItems.push(topLevelItem);
+
+                if (finished === entries.length)
+                {
+                    topLevelItems.forEach(function(item) {
+                        self.enqueueItem(item);
+                    });
+
+                    self.runQueue();
+                }
+            });
+        });
+    }
+
+    UploadManager.prototype.createStatusBar = function createStatusBar()
+    {
+        var self = this;
+
+        var statusBar = document.createElement('div');
+        statusBar.classList = 'statusBar';
+        var enqueuedBar = document.createElement('div');
+        enqueuedBar.classList = 'statusBarMeter enqueuedStatusBarMeter';
+        var initiatedBar = document.createElement('div');
+        initiatedBar.classList = 'statusBarMeter initiatedStatusBarMeter';
+        var completedBar = document.createElement('div');
+        completedBar.classList = 'statusBarMeter completedStatusBarMeter';
+
+        statusBar.appendChild(enqueuedBar);
+        statusBar.appendChild(initiatedBar);
+        statusBar.appendChild(completedBar);
+
+        self.enqueuedBar = enqueuedBar;
+        self.initiatedBar = initiatedBar;
+        self.completedBar = completedBar;
+
+        self.baseElement.appendChild(statusBar);
+
+        var statusTextSection = document.createElement('div');
+        statusTextSection.classList = 'statusTextSection';
+
+        var readySection = document.createElement('span');
+        readySection.innerText = 'Ready: ';
+        var readySectionValue = document.createElement('span');
+        readySection.appendChild(readySectionValue);
+        self.readySectionValue = readySectionValue;
+
+        var activeSection = document.createElement('span');
+        activeSection.innerText = 'Started: ';
+        var activeSectionValue = document.createElement('span');
+        activeSection.appendChild(activeSectionValue);
+        self.activeSectionValue = activeSectionValue;
+
+        var completedSection = document.createElement('span');
+        completedSection.innerText = 'Complete: ';
+        var completedSectionValue = document.createElement('span');
+        completedSection.appendChild(completedSectionValue);
+        self.completedSectionValue = completedSectionValue;
+
+        statusTextSection.appendChild(readySection);
+        statusTextSection.appendChild(activeSection);
+        statusTextSection.appendChild(completedSection);
+
+        self.baseElement.appendChild(statusTextSection);
+    }
+
+    UploadManager.prototype.updateStatusBar = function updateStatusBar()
+    {
+        var self = this;
+        var enqueuedPercent = 0;
+        var initiatedPercent = 0;
+        var completedPercent = 0;
+
+        if (self.totalItems > 0) {
+            enqueuedPercent = (self.enqueuedItems / self.totalItems) * 100;
+            initiatedPercent = (self.initiatedItems / self.totalItems) * 100;
+            completedPercent = (self.completedItems / self.totalItems) * 100;
+        }
+
+//        console.log('ENQUEUED: ', self.enqueuedItems, 'INITIATED: ', self.initiatedItems, 'COMPLETED: ', self.completedItems, 'TOTAL: ', self.totalItems);
+
+        self.enqueuedBar.style.width = enqueuedPercent + '%';
+        self.initiatedBar.style.width = initiatedPercent + '%';
+        self.completedBar.style.width = completedPercent + '%';
+
+        self.readySectionValue.innerText = self.enqueuedItems + ' / ' + self.totalItems;
+        self.activeSectionValue.innerText = self.initiatedItems + ' / ' + self.totalItems;
+        self.completedSectionValue.innerText = self.completedItems + ' / ' + self.totalItems;
+    }
+
+    UploadManager.prototype.buildUploadTree = function buildUploadTree(entry, parentElem, index, done)
+    {
+        if (entry.isFile && UploadManager.IGNORED_FILE_NAMES[entry.name])
+        {
+            return done(null);
+        }
+
+        console.log('BUILDING TREE FOR: ', entry.name);
+
+        var self = this;
+        self.totalItems++;
+        var id = randomId();
+        var elem = document.createElement('li');
+        elem.id = id;
+        var label = document.createElement('span');
+        label.innerText = entry.name;
+        elem.appendChild(label);
+        var icon = document.createElement('i');
+        icon.classList.add('statusIcon');
+        elem.appendChild(icon);
+
+        if (entry.isDirectory)
+        {
+            var children = document.createElement('ul');
+            elem.appendChild(children);
+
+            var directoryReader = entry.createReader();
+            directoryReader.readEntries(function(items) {
+                var finished = 0;
+                var childItems = [];
+                items.forEach(function(item, i) {
+                    self.buildUploadTree(item, children, i, function(childItem){
+                        finished++;
+
+                        if (childItem) {
+                            childItems.push(childItem);
+                        }
+
+                        if (finished === items.length)
+                        {
+                            done({
+                                entry: entry,
+                                children: childItems,
+                                id: id,
+                                elem: elem,
+                                index: index,
+                                parentId: null,
+                            });
+                        }
+                    });
+                });
+            });
+        }
+        else
+        {
+            done({
+                entry: entry,
+                children: null,
+                id: id,
+                elem: elem,
+                index: index,
+                parentId: null,
+            });
+        }
+
+        parentElem.appendChild(elem);
+    }
+
+    UploadManager.prototype.enqueueItem = function(item)
+    {
+        var self = this;
+        self.queue.push(item);
+
+        self.enqueuedItems++;
+
+        self.updateStatusBar();
+    }
+
+    UploadManager.prototype.runQueue = function()
+    {
+        var self = this;
+
+        for (var i = 0; i < Math.min(self.maxSimultaneousUploads, self.queue.length); i++) {
+            self.uploadItem(self.queue[i], null);
+            self.running++;
+            self.queue[i].uploading = true;
+        }
+
+        self.updateStatusBar();
+    }
+
+    UploadManager.prototype.cycleQueue = function(completedItem)
+    {
+        var self = this;
+
+        self.completedItems++;
+        self.running--;
+
+        self.queue = self.queue.filter(function(item){
+            return item.id !== completedItem.id;
+        });
+
+        for (var i = 0; i < self.queue.length; i++) {
+            if (!self.queue[i].uploading) {
+                self.uploadItem(self.queue[i]);
+                self.running++;
+                if (self.running >= self.maxSimultaneousUploads) {
+                    break;
+                }
+            }
+        }
+
+        if (self.queue.length === 0) {
+            window.removeEventListener('beforeunload', self.onBeforeUnload);
+
+            self.completedBar.classList.add('done');
+        }
+
+        self.updateStatusBar();
+    }
+
+    UploadManager.prototype.uploadItem = function(itemInfo) {
+        var self = this;
+        var entry = itemInfo.entry;
+        self.initiatedItems++;
+
+        itemInfo.uploading = true;
+
+        if (entry.isDirectory) {
+            self.uploadDirectory(itemInfo);
+        } else {
+            self.uploadFile(itemInfo);
+        }
+    }
+
+    UploadManager.prototype.uploadDirectory = function uploadDirectory(itemInfo)
+    {
+        var self = this;
+
+        var parentId = itemInfo.parentId;
+        var iconElem = itemInfo.elem.getElementsByClassName('statusIcon')[0];
+        iconElem.classList.add('fa');
+        iconElem.classList.add('fa-circle-o-notch');
+
+        var data = new FormData();
+        data.append('parentId', parentId);
+        data.append('name', itemInfo.entry.name);
+        data.append('ownerModelKey', OWNER_MODEL_KEY);
+        data.append('ownerId', OWNER_ID);
+        var link = '/assets/create';
+
+        $.ajax({
+            url: link,
+            dataType: 'json',
+            type: 'POST',
+            data: data,
+            cache: false,
+            contentType: false,
+            processData: false,
+            success: function(result) {
+//                console.log('result', result);
+//                console.log('resultData', result.data);
+
+                var itemId = result.data.result._id;
+
+                iconElem.classList.remove('fa-circle-o-notch');
+                iconElem.classList.add('fa-check');
+
+                itemInfo.children.forEach(function(child) {
+                    child.parentId = itemId;
+                    self.enqueueItem(child);
+                });
+
+                self.cycleQueue(itemInfo);
+            },
+            error: function(result) {
+                console.error('error: ', result);
+
+                iconElem.classList.remove('fa-circle-o-notch');
+                iconElem.classList.add('fa-times');
+
+                self.cycleQueue(itemInfo);
+            }
+        });
+    }
+
+    UploadManager.prototype.uploadFile = function uploadFile(itemInfo)
+    {
+        var self = this;
+
+        var parentId = itemInfo.parentId;
+        var iconElem = itemInfo.elem.getElementsByClassName('statusIcon')[0];
+        iconElem.classList.add('fa');
+        iconElem.classList.add('fa-circle-o-notch');
+
+        itemInfo.entry.file(function(fileObj)
+        {
+            var link = '/assets/create';
+            var data = new FormData();
+            data.append('parentId', parentId);
+            data.append('name', itemInfo.entry.name);
+            data.append('locationPath', fileObj);
+            data.append('ownerModelKey', OWNER_MODEL_KEY);
+            data.append('ownerId', OWNER_ID);
+
+            $.ajax({
+                url: link,
+                dataType: 'json',
+                type: 'POST',
+                data: data,
+                cache: false,
+                contentType: false,
+                processData: false,
+                success: function(result) {
+                    var itemId = result.data._id;
+
+                    iconElem.classList.remove('fa-circle-o-notch');
+                    iconElem.classList.add('fa-check');
+                    self.cycleQueue(itemInfo);
+                },
+                error: function(result) {
+                    console.error('error: ', result);
+
+                    iconElem.classList.remove('fa-circle-o-notch');
+                    iconElem.classList.add('fa-times');
+
+                    self.cycleQueue(itemInfo);
+                }
+            });
+        });
+    }
+
+
+
+    function dragoverHandler(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+    }
+
+    function dropHandler(e) {
+        e.preventDefault();
+        var files = e.dataTransfer.files;
+        var items = e.dataTransfer.items;
+        var baseEl = document.createElement('div');
+        baseEl.classList.add('well');
+
+        uploadsSection.insertBefore(baseEl, uploadsSection.getElementsByClassName('well')[0] || null);
+
+
+        var entries = [];
+
+        for (var i = 0, item; item = items[i]; i++) {
+            if (item.kind != 'file') {
+                continue;
+            }
+
+            entries.push(item.webkitGetAsEntry())
+        }
+
+        var manager = new UploadManager(entries, baseEl);
+        manager.run(function() {
+            console.log('done');
+        });
+    }
+
+    function dragenterHandler(e) {
+        e.target.classList.add('active');
+    }
+
+    function dragleaveHandler(e) {
+        e.target.classList.remove('active');
+    }
+
+    dropzone.addEventListener('drop', dropHandler);
+    dropzone.addEventListener('dragover', dragoverHandler);
+    dropzone.addEventListener('dragenter', dragenterHandler);
+    dropzone.addEventListener('dragleave', dragleaveHandler);
+
+})();
+</script>
+
+<style>
+    @-moz-keyframes spinner-loader {
+        0% {
+            -moz-transform: rotate(0deg);
+            transform: rotate(0deg);
+        }
+        100% {
+            -moz-transform: rotate(360deg);
+            transform: rotate(360deg);
+        }
+    }
+    @-webkit-keyframes spinner-loader {
+        0% {
+            -webkit-transform: rotate(0deg);
+            transform: rotate(0deg);
+        }
+        100% {
+            -webkit-transform: rotate(360deg);
+            transform: rotate(360deg);
+        }
+    }
+    @keyframes spinner-loader {
+        0% {
+            -moz-transform: rotate(0deg);
+            -ms-transform: rotate(0deg);
+            -webkit-transform: rotate(0deg);
+            transform: rotate(0deg);
+        }
+        100% {
+            -moz-transform: rotate(360deg);
+            -ms-transform: rotate(360deg);
+            -webkit-transform: rotate(360deg);
+            transform: rotate(360deg);
+        }
+    }
+
+    .dropzone {
+        width: 80%;
+        margin-left: auto;
+        margin-right: auto;
+        margin-top: 20px;
+        margin-bottom: 20px;
+        padding-top: 80px;
+        box-sizing: border-box;
+        height: 200px;
+        text-align: center;
+        border: 4px dashed #000000;
+    }
+
+    .dropzone.active {
+        border: 4px dashed {{#data:key/primaryColor}};
+    }
+
+    #uploadsSection .fa-circle-o-notch {
+        -moz-animation: spinner-loader 1500ms infinite linear;
+        -webkit-animation: spinner-loader 1500ms infinite linear;
+        animation: spinner-loader 1500ms infinite linear;
+        color: #3333FF;
+    }
+
+    #uploadsSection .fa-check {
+        color: #33FF33;
+    }
+
+    #uploadsSection .fa-times {
+        color: #FF3333;
+    }
+
+    #uploadsSection ul {
+        list-style: none;
+        padding-left: 20px;
+    }
+
+    #uploadsSection ul.topLevel {
+        padding-left: 0;
+    }
+
+    #uploadsSection ul > li li:before {
+        content: '↳';
+    }
+
+    #uploadsSection .statusIcon {
+        margin-left: 4px;
+    }
+
+    .statusBar {
+        max-width: 320px;
+        width: 100%;
+        height: 24px;
+        border: 1px solid #333;
+        box-sizing: border-box;
+        position: relative;
+        background: white;
+    }
+
+    .statusBarMeter {
+        width: 0;
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        transition: width 400ms, background-color 1s;
+    }
+
+    .enqueuedStatusBarMeter {
+        background: #DDD;
+    }
+
+    .initiatedStatusBarMeter {
+        background: #AAA;
+    }
+
+    .completedStatusBarMeter {
+        background: #2AA1D9;
+    }
+
+    .completedStatusBarMeter.done {
+        background: #33FF33;
+    }
+
+    .statusTextSection {
+        margin-top: 10px;
+    }
+
+    .statusTextSection > span {
+        margin-right: 20px;
+    }
+
+</style>
+
+</body>
+</html>
