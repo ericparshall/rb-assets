@@ -5867,38 +5867,59 @@ AssetDirectoryApp.prototype.renderUploadingAsset = function(asset) {
 ///////////////////////////////////////////////////////////
 
 AssetDirectoryApp.prototype.loadLibraries = function(done) {
-    var self = this;
+    const self = this;
 
-    var url = '/asset-libraries/list/0';
+    const indices = [0, 1, 2, 3, 4];
+    let iterationCount = 0;
 
-    fetch(url, {
-        headers: {
-            'Accept': 'application/json'
-        },
-        credentials: 'same-origin',
-    }).then(function(response) {
-        return response.json();
-    }).then(function(json){
-        var data = json.data;
-        var list = data.list;
-        var total = data.total;
+    var url = '/asset-libraries/list/';
 
-        self.libraries = list;
+    self.libraries = [];
 
-        if (typeof done === 'function')  {
-            done(self.libraries);
+    const loader = {
+        loadPage: () => {
+            iterationCount += 1;
+            if (iterationCount > 5) {
+                self.loading = false;
+                self.update();
+                return;
+            }
+
+            let index = indices.shift();
+
+            fetch(`${url}${index}`, {
+                headers: {
+                    'Accept': 'application/json'
+                },
+                credentials: 'same-origin',
+            }).then(function(response) {
+                return response.json();
+            }).then(function(json){
+                let data = json.data;
+                let list = data.list;
+                let total = data.total;
+
+                if (list.length == 0) {
+                    if (typeof done === 'function')  {
+                        done(self.libraries);
+                    }
+
+                    console.log('loader is done');
+
+                    self.loading = false;
+                    self.update();
+                } else {
+                    console.log("adding list", list);
+                    list.forEach(element => self.libraries.push(element))
+                    loader.loadPage();
+                }
+
+            }).catch(function(ex) {
+                console.log('LOAD FAILED: ', ex);
+            });
         }
-
-        console.log('JSON: ', json);
-        // update view
-        self.loading = false;
-        self.update();
-
-    }).catch(function(ex) {
-        console.log('LOAD FAILED: ', ex);
-    });
-
-
+    }
+    loader.loadPage();
 }
 
 AssetDirectoryApp.prototype.loadDirectory = function(parentId, done) {
